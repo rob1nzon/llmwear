@@ -1,0 +1,5 @@
+<resources>
+    <string-array name="android_wear_capabilities">
+        <item>llm_wear_host</item>
+    </string-array>
+</resources>
