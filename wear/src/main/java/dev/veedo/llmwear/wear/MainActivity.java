@@ -37,6 +37,8 @@ import android.widget.NumberPicker;
 import android.widget.Switch;
 import android.widget.RadioGroup;
 import android.widget.RadioButton;
+import android.widget.ArrayAdapter;
+import android.widget.Spinner;
 
 import org.json.JSONObject;
 import dev.veedo.llmwear.commands.WeatherCommand;
@@ -49,6 +51,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -59,6 +62,7 @@ public final class MainActivity extends Activity {
     private static final int ACCENT = Color.rgb(145, 230, 189);
     private static final String PREFS = "llm_wear";
     private static final String KEY_HOST = "host";
+    private static final String KEY_SPEECH_PROVIDER = "speech_provider";
     private static final int REQUEST_SPEECH = 101;
     private static final int REQUEST_AUDIO_PERMISSION = 102;
 
@@ -88,6 +92,7 @@ public final class MainActivity extends Activity {
     private TextView connectionStatus;
     private volatile HttpURLConnection activeConnection;
     private boolean pendingAssistantInput;
+    private String speechProvider;
 
     private static boolean isAssistantIntent(Intent intent) {
         return intent != null && (Intent.ACTION_ASSIST.equals(intent.getAction())
@@ -266,6 +271,7 @@ public final class MainActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         usePhone = prefs.getBoolean("use_phone", true);
         autoSpeakEnabled = prefs.getBoolean("auto_speak", true);
+        speechProvider = prefs.getString(KEY_SPEECH_PROVIDER, SpeechInputProviders.SAMSUNG);
         hostInput = new EditText(this);
         hostInput.setText(prefs.getString(KEY_HOST, ""));
         promptInput = new EditText(this);
@@ -416,6 +422,23 @@ public final class MainActivity extends Activity {
         address.setVisibility(usePhone ? View.GONE : View.VISIBLE);
         mode.setOnCheckedChangeListener((group, id) -> address.setVisibility(id == phone.getId() ? View.GONE : View.VISIBLE));
         settings.addView(address, fullWidth());
+        settings.addView(label("Голосовой ввод", 12, MUTED), fullWidth());
+        List<String> installedSpeech = installedSpeechProviders();
+        List<String> speechProviders = SpeechInputProviders.available(installedSpeech);
+        List<String> speechLabels = new ArrayList<>();
+        for (String provider : speechProviders) {
+            speechLabels.add(SpeechInputProviders.SAMSUNG.equals(provider) ? "Samsung"
+                    : SpeechInputProviders.GOOGLE.equals(provider) ? "Google" : "Системный");
+        }
+        Spinner recognition = new Spinner(this);
+        recognition.setContentDescription("Голосовой ввод");
+        ArrayAdapter<String> providersAdapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, speechLabels);
+        providersAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        recognition.setAdapter(providersAdapter);
+        recognition.setSelection(speechProviders.indexOf(
+                SpeechInputProviders.choose(speechProvider, installedSpeech)));
+        settings.addView(recognition, new LinearLayout.LayoutParams(-1, dp(44)));
         CheckBox speech = new CheckBox(this);
         speech.setText("Озвучка");
         speech.setTextSize(13);
@@ -440,9 +463,11 @@ public final class MainActivity extends Activity {
         root.addView(dialogTools(dialog, R.drawable.ic_check, "Сохранить", () -> {
                     usePhone = phone.isChecked();
                     autoSpeakEnabled = speech.isChecked();
+                    speechProvider = speechProviders.get(recognition.getSelectedItemPosition());
                     hostInput.setText(address.getText());
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("use_phone", usePhone)
-                            .putBoolean("auto_speak", autoSpeakEnabled).putString(KEY_HOST, address.getText().toString()).apply();
+                            .putBoolean("auto_speak", autoSpeakEnabled).putString(KEY_HOST, address.getText().toString())
+                            .putString(KEY_SPEECH_PROVIDER, speechProvider).apply();
                     if (!autoSpeakEnabled) stopSpeech();
                     checkConnection();
                 }), fullWidth());
@@ -564,6 +589,15 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private List<String> installedSpeechProviders() {
+        List<String> installed = new ArrayList<>();
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        for (android.content.pm.ResolveInfo provider : getPackageManager().queryIntentActivities(intent, 0)) {
+            if (provider.activityInfo != null) installed.add(provider.activityInfo.packageName);
+        }
+        return installed;
+    }
+
     private void startVoiceInput() {
         stopSpeech();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
@@ -579,12 +613,8 @@ public final class MainActivity extends Activity {
         intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "LLM Wear");
         intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
 
-        for (android.content.pm.ResolveInfo provider : getPackageManager().queryIntentActivities(intent, 0)) {
-            if (provider.activityInfo != null && "com.google.android.tts".equals(provider.activityInfo.packageName)) {
-                intent.setPackage(provider.activityInfo.packageName);
-                break;
-            }
-        }
+        String provider = SpeechInputProviders.choose(speechProvider, installedSpeechProviders());
+        if (!provider.isEmpty()) intent.setPackage(provider);
 
         try {
             startActivityForResult(intent, REQUEST_SPEECH);

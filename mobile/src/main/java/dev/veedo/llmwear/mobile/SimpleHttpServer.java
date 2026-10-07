@@ -49,7 +49,8 @@ final class SimpleHttpServer extends NanoHTTPD {
             }
             if (session.getMethod() == Method.GET && "/health".equals(session.getUri())) {
                 return json(Response.Status.OK, new JSONObject().put("status", "ready")
-                        .put("model", engine.modelName()).put("port", getListeningPort()));
+                        .put("model", engine.modelName()).put("port", getListeningPort())
+                        .put("model_state", engine.modelState()).put("idle_timeout_seconds", engine.idleTimeoutSeconds()));
             }
             if (session.getMethod() == Method.GET && "/v1/models".equals(session.getUri())) {
                 return json(Response.Status.OK, new JSONObject().put("object", "list")

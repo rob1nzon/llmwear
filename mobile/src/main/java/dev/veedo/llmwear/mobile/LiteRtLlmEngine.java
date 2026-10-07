@@ -39,6 +39,9 @@ final class LiteRtLlmEngine implements LlmEngine {
         inferenceLock.acquire(60_000);
         try {
             engine.initialize();
+        } catch (RuntimeException | LinkageError | OutOfMemoryError failure) {
+            if (engine.isInitialized()) engine.close();
+            throw failure;
         } finally {
             if (inferenceLock.isHeld()) {
                 inferenceLock.release();

@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
@@ -33,6 +34,63 @@ public final class SimpleHttpServerTest {
         engine.release.countDown();
         server.closeEngine();
         assertTrue(engine.closed);
+    }
+
+    @Test
+    public void healthModelsAndWeatherDoNotWakeSleepingModel() throws Exception {
+        AtomicInteger loads = new AtomicInteger();
+        startLazy(() -> { loads.incrementAndGet(); return new FakeEngine(); });
+        Reply health = request("GET", "/health", null);
+        assertEquals("ready", health.body.getString("status"));
+        assertEquals("sleeping", health.body.getString("model_state"));
+        assertEquals(120, health.body.getLong("idle_timeout_seconds"));
+        assertEquals(200, request("GET", "/v1/models", null).status);
+        assertEquals(200, request("GET", "/weather", null).status);
+        assertEquals(0, loads.get());
+        assertEquals(200, request("POST", "/generate", "{\"prompt\":\"hello\"}").status);
+        assertEquals(1, loads.get());
+        assertEquals("ready", request("GET", "/health", null).body.getString("model_state"));
+    }
+
+    @Test
+    public void failedLazyLoadKeepsApiAndWeatherAvailable() throws Exception {
+        startLazy(() -> { throw new IllegalStateException("load failed"); });
+        Reply failed = request("POST", "/generate", "{\"prompt\":\"hello\"}");
+        assertEquals(500, failed.status);
+        assertEquals("load failed", failed.body.getString("error"));
+        assertEquals("error", request("GET", "/health", null).body.getString("model_state"));
+        assertEquals(200, request("GET", "/weather", null).status);
+    }
+
+    @Test
+    public void initializationRejectsConcurrentInferenceWithoutBlockingHealth() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        try {
+            startLazy(() -> {
+                entered.countDown();
+                if (!release.await(3, TimeUnit.SECONDS)) throw new IllegalStateException("Test timed out");
+                return new FakeEngine();
+            });
+            Future<Reply> first = caller.submit(() -> request("POST", "/generate", "{\"prompt\":\"first\"}"));
+            assertTrue(entered.await(2, TimeUnit.SECONDS));
+            assertEquals("loading", request("GET", "/health", null).body.getString("model_state"));
+            assertEquals(503, request("POST", "/generate", "{\"prompt\":\"second\"}").status);
+            release.countDown();
+            assertEquals(200, first.get(2, TimeUnit.SECONDS).status);
+        } finally {
+            release.countDown();
+            caller.shutdownNow();
+        }
+    }
+
+    private void startLazy(LazyLlmEngine.Factory factory) throws Exception {
+        server.closeEngine();
+        LlmEngine lazy = new LazyLlmEngine("test-model", factory, 120000,
+                task -> new Thread(task, "http-test-model"));
+        server = new SimpleHttpServer(0, lazy, tomorrow -> "current weather");
+        server.start(2000, true);
     }
 
     @Test

@@ -42,6 +42,7 @@ public final class WearBridgeService extends WearableListenerService {
         JSONObject status = new JSONObject();
         try {
             status.put("running", LlmApiService.isRunning());
+            status.put("model_state", LlmApiService.modelState());
             status.put("model_available", ModelStore.modelFile(this).isFile());
         } catch (org.json.JSONException ignored) {
         }

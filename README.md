@@ -31,8 +31,8 @@ APKs:
    [the LiteRT Community model repository](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/main/gemma3-1b-it-int4.litertlm).
 4. Return to the app, tap `Import model`, and select that file. The model is
    copied into private app storage; leave the app open until import completes.
-5. Select CPU or GPU and enable the API server. The app loads the model in the background,
-   then shows `Ready` and starts the API on port `8765`.
+5. Select CPU or GPU and enable the API server. The API starts on port `8765`
+   without loading the model. The first LLM request loads it in the background.
 6. Send a prompt on the phone to verify that the model loads on your hardware.
 
 Use a `.litertlm` model supported by LiteRT-LM. `.task`, `.gguf`, and
@@ -135,8 +135,14 @@ temperature range is computed from hourly values in the city's timezone.
 The watch APK registers `ACTION_ASSIST` and a permission-protected
 `VoiceInteractionService`/session. Select LLM Wear in the watch's default digital
 assistant settings, or use the assistant command in LLM Wear settings. Invoking
-the assistant starts voice input; launching the app normally does not. The Google
-speech UI is preferred when installed, avoiding Samsung's keyboard fallback.
+the assistant starts voice input; launching the app normally does not. Watch settings
+let you select Samsung, Google, or the system speech input UI. Samsung is the default
+when available; otherwise Google is preferred. On the connected Watch4 Classic,
+Samsung exposes its keyboard input activity, not a standalone `SpeechRecognizer`
+service; its microphone button may need to be pressed. The app leaves end-of-speech
+timing to the provider and does not submit unfinished recognition results. Recognition
+may use the network depending on the selected provider; the offline preference is
+not a guarantee of offline operation.
 There is no always-listening hotword, lock-screen bypass, or background microphone.
 No foreground-app assist data or screenshots are collected.
 
@@ -168,10 +174,27 @@ curl http://PHONE_IP:8765/v1/chat/completions \
   -d '{"messages":[{"role":"user","content":"Give me a short checklist"}],"stream":false}'
 ```
 
+The model loads only for `/generate` or `/v1/chat/completions` (including LLM
+requests from the paired watch). After two minutes without an inference request,
+the native engine is closed and its resources are released. The next request
+loads it again, so a cold response takes longer. Loading, inference, and release
+share one serial background worker; unloading never interrupts an active answer.
+API health checks, model listing, and weather neither load the model nor extend
+its idle timeout. No polling, alarm, or idle wake lock is used to unload it;
+Android suspend/Doze may defer release until execution resumes.
+
+`/health` reports API availability separately from `model_state` (`sleeping`,
+`loading`, `generating`, `ready`, `unloading`, or `error`) and
+`idle_timeout_seconds` (`120`). A load failure leaves the API/weather available
+and is returned as a JSON error; the next LLM request can retry. Keeping weights
+in memory does not itself mean continuous inference, and battery savings are
+device/workload-dependent. Unloading primarily frees model resources; repeated
+cold starts also consume energy.
+
 `/generate` returns `{"model":"...","text":"..."}`. Chat completions accepts
 text messages with `system` (first message only), `user`, and `assistant` roles;
 the final message must be `user`. History is passed to LiteRT-LM as structured
-messages. Each request uses a fresh conversation with shared model weights.
+messages. Each request uses a fresh conversation with weights shared while warm.
 
 This is a subset of the OpenAI chat response format, not full OpenAI API
 compatibility: no streaming, tools, multimodal requests, or per-request sampling.

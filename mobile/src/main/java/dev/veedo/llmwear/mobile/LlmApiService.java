@@ -11,6 +11,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Process;
 import android.util.Log;
 
 import java.util.concurrent.ExecutorService;
@@ -19,12 +20,14 @@ import java.util.concurrent.Executors;
 public final class LlmApiService extends Service {
     public static final String ACTION_START = "dev.veedo.llmwear.mobile.START";
     public static final int PORT = 8765;
+    public static final long MODEL_IDLE_MILLIS = 120_000;
     private static final String CHANNEL_ID = "llm_api";
     private static final ExecutorService worker = Executors.newSingleThreadExecutor();
     private static volatile boolean active;
     private static volatile boolean running;
     private static volatile String status = "Stopped";
     private static volatile String lastError = "";
+    private static volatile LazyLlmEngine currentEngine;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private volatile SimpleHttpServer server;
     private volatile boolean destroyed;
@@ -43,7 +46,13 @@ public final class LlmApiService extends Service {
     }
 
     public static String lastError() {
-        return lastError;
+        LazyLlmEngine current = currentEngine;
+        return current != null && !current.lastError().isEmpty() ? current.lastError() : lastError;
+    }
+
+    public static String modelState() {
+        LazyLlmEngine current = currentEngine;
+        return current == null ? "sleeping" : current.modelState();
     }
 
     @Override
@@ -59,14 +68,14 @@ public final class LlmApiService extends Service {
             return START_NOT_STICKY;
         }
         started = true;
-        Notification notification = buildNotification("Loading model");
+        Notification notification = buildNotification("Запуск API");
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         } else {
             startForeground(1, notification);
         }
         active = true;
-        status = "Loading model...";
+        status = "Starting API...";
         lastError = "";
         worker.execute(() -> {
             LlmEngine engine = null;
@@ -74,7 +83,13 @@ public final class LlmApiService extends Service {
                 if (ModelStore.isImporting()) {
                     throw new IllegalStateException("Wait for model import to finish");
                 }
-                engine = new LiteRtLlmEngine(getApplicationContext());
+                boolean gpu = ModelStore.useGpu(this);
+                engine = new LazyLlmEngine(ModelStore.modelName(this),
+                        () -> new LiteRtLlmEngine(getApplicationContext(), gpu), MODEL_IDLE_MILLIS,
+                        task -> new Thread(() -> {
+                            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
+                            task.run();
+                        }, "llm-model"));
                 if (destroyed) {
                     engine.close();
                     return;
@@ -83,12 +98,13 @@ public final class LlmApiService extends Service {
                         tomorrow -> WeatherClient.forecast(getApplicationContext(), tomorrow));
                 candidate.start(300_000, true);
                 server = candidate;
+                currentEngine = (LazyLlmEngine) engine;
                 handler.post(() -> {
                     if (!destroyed) {
                         running = true;
                         status = "Ready: " + ModelStore.modelName(this);
                         getSystemService(NotificationManager.class).notify(1,
-                                buildNotification("Listening on port " + PORT));
+                                buildNotification("API на порту " + PORT + " · модель по запросу"));
                     }
                 });
             } catch (Exception | LinkageError | OutOfMemoryError e) {
@@ -124,6 +140,7 @@ public final class LlmApiService extends Service {
                 }
             } finally {
                 active = false;
+                currentEngine = null;
                 status = lastError.isEmpty() ? "Stopped" : "Model error";
             }
         });

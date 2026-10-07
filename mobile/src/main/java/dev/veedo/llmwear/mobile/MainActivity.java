@@ -342,7 +342,16 @@ public final class MainActivity extends Activity {
         boolean active = LlmApiService.isActive();
         boolean importing = ModelStore.isImporting();
         boolean hasModel = ModelStore.modelFile(this).isFile();
-        statusView.setText(running ? "Работает" : active ? "Загрузка модели..." : hasModel ? "Остановлен" : "Нет модели");
+        String state = LlmApiService.modelState();
+        String modelStatus = switch (state) {
+            case "loading" -> "Загрузка модели...";
+            case "generating" -> "Модель отвечает...";
+            case "unloading" -> "Выгрузка модели...";
+            case "ready" -> "API работает · модель загружена";
+            case "error" -> "Ошибка модели · API работает";
+            default -> "API работает · модель спит";
+        };
+        statusView.setText(running ? modelStatus : active ? "Запуск API..." : hasModel ? "Остановлен" : "Нет модели");
         statusView.setTextColor(running ? ACCENT : MUTED);
         updatingSwitch = true;
         serverSwitch.setChecked(active);
@@ -368,8 +377,8 @@ public final class MainActivity extends Activity {
         String ip = NetworkInfo.firstIpv4Address();
         addressView.setText("http://" + ip + ":" + LlmApiService.PORT);
         String error = LlmApiService.lastError();
-        if (!running && error != null && !error.isEmpty()) {
-            statusView.setText("Ошибка загрузки");
+        if (error != null && !error.isEmpty()) {
+            statusView.setText(running ? "Ошибка модели · API работает" : "Ошибка запуска");
             statusView.setTextColor(Color.rgb(255, 145, 145));
             modelDetails.setText(error);
         }
@@ -391,7 +400,8 @@ public final class MainActivity extends Activity {
         userView.setText(prompt);
         userView.setVisibility(View.VISIBLE);
         resultView.setTextColor(INK);
-        resultView.setText(weather ? "Получение погоды..." : "Генерация...");
+        resultView.setText(weather ? "Получение погоды..."
+                : "sleeping".equals(LlmApiService.modelState()) ? "Загрузка модели..." : "Генерация...");
         promptInput.setText("");
         contentScroll.post(() -> contentScroll.fullScroll(View.FOCUS_DOWN));
         executor.execute(() -> {
