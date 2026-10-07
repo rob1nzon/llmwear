@@ -23,6 +23,29 @@ APKs:
 - `mobile/build/outputs/apk/debug/mobile-debug.apk`
 - `wear/build/outputs/apk/debug/wear-debug.apk`
 
+### GitHub Builds
+
+[Android APKs](https://github.com/rob1nzon/llmwear/actions/workflows/android.yml)
+builds both apps, runs both JVM test suites and lint, and uploads APKs plus
+SHA-256 checksums as `llmwear-apks-N` artifacts. It runs on pushes to `main`,
+pull requests, version tags (`v*`), and manual workflow dispatch. Artifacts expire
+after 30 days; downloading Actions artifacts requires a GitHub login.
+
+With the repository secret `ANDROID_DEBUG_KEYSTORE_BASE64` configured, successful
+pushes to `main` also publish public development APKs under
+[Releases](https://github.com/rob1nzon/llmwear/releases). Version tags publish a
+non-prerelease entry. These are debug APKs, not production-hardened builds;
+model weights are downloaded/imported separately.
+
+The secret must contain the Base64-encoded Android debug keystore (alias
+`androiddebugkey`, standard debug passwords). Both APKs are signed in the same
+job. Use the existing installation's key for in-place updates; a different key
+cannot update that installation. Never commit the keystore, put it in artifacts,
+or uninstall an app without backing up its data and imported model.
+Pull-request builds never receive the signing secret. Without a secret, builds
+still run but use an ephemeral CI debug key and do not publish a Release;
+these APKs are not compatible with existing installations.
+
 ## Phone Setup
 
 1. Install and open `LLM Wear Host` on a 64-bit Android phone (Android 8+).
