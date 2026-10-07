@@ -102,6 +102,28 @@ public final class SimpleHttpServerTest {
         assertEquals(405, request("POST", "/weather", "{}").status);
     }
 
+    @Test public void searchApiGroundsThePromptAndPreservesHealthAndWeather() throws Exception {
+        server.closeEngine();
+        SearchLlmEngine searched = new SearchLlmEngine(new FakeEngine(), query -> WebSearchResultTest.sample(), () -> true);
+        server = new SimpleHttpServer(0, searched, tomorrow -> "current weather");
+        server.start(2000, true);
+        Reply answer = request("POST", "/generate", "{\"prompt\":\"web search Android docs\"}");
+        assertEquals(200, answer.status);
+        assertTrue(answer.body.getString("text").contains("https://developer.android.com/"));
+        assertEquals(200, request("GET", "/health", null).status);
+        assertEquals(200, request("GET", "/weather", null).status);
+    }
+
+    @Test public void searchFailureIsAnApiErrorNotAHallucinatedLocalAnswer() throws Exception {
+        server.closeEngine();
+        SearchLlmEngine searched = new SearchLlmEngine(new FakeEngine(), query -> { throw new java.io.IOException("Search unavailable"); }, () -> true);
+        server = new SimpleHttpServer(0, searched);
+        server.start(2000, true);
+        Reply answer = request("POST", "/generate", "{\"prompt\":\"web search docs\"}");
+        assertEquals(500, answer.status);
+        assertEquals("Search unavailable", answer.body.getString("error"));
+    }
+
     @Test
     public void unicodePromptUsesUtf8Bytes() throws Exception {
         String prompt = "\u041f\u0440\u0438\u0432\u0435\u0442 \ud83d\udc4b";

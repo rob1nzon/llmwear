@@ -30,6 +30,17 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("com.google.ai.edge.litertlm:litertlm-android:0.17.1")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+}
+
+tasks.register<JavaExec>("probeWebSearch") {
+    dependsOn("testDebugUnitTest")
+    val unitTests = tasks.named<org.gradle.api.tasks.testing.Test>("testDebugUnitTest")
+    classpath = files(unitTests.map { it.testClassesDirs }, unitTests.map { it.classpath })
+    mainClass.set("dev.veedo.llmwear.mobile.WebSearchProbe")
+    jvmArgs("-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
+    args(providers.gradleProperty("searchQuery").orElse("LiteRT-LM official Android documentation").get())
 }

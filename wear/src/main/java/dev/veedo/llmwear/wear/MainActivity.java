@@ -42,6 +42,7 @@ import android.widget.Spinner;
 
 import org.json.JSONObject;
 import dev.veedo.llmwear.commands.WeatherCommand;
+import dev.veedo.llmwear.commands.SearchSources;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -738,6 +739,8 @@ public final class MainActivity extends Activity {
         if (text == null || text.trim().isEmpty()) {
             return;
         }
+        text = SearchSources.forSpeech(text);
+        if (text.isEmpty()) return;
         if (!ttsInitialized) {
             pendingSpeech = text;
             return;

@@ -1,6 +1,7 @@
 package dev.veedo.llmwear.mobile;
 
 import dev.veedo.llmwear.commands.WeatherCommand;
+import dev.veedo.llmwear.commands.SearchCommand;
 
 import android.Manifest;
 import android.app.Activity;
@@ -248,6 +249,17 @@ public final class MainActivity extends Activity {
         });
         addressRow.addView(copy, new LinearLayout.LayoutParams(dp(40), dp(40)));
         content.addView(addressRow, fullWidth());
+        LinearLayout searchRow = row();
+        TextView searchLabel = label(16);
+        searchLabel.setText("Поиск в интернете");
+        searchRow.addView(searchLabel, new LinearLayout.LayoutParams(0, dp(48), 1));
+        Switch webSearch = new Switch(this);
+        webSearch.setContentDescription("Поиск в интернете · Exa MCP");
+        webSearch.setChecked(getSharedPreferences("web_search", MODE_PRIVATE).getBoolean("enabled", true));
+        webSearch.setOnCheckedChangeListener((button, checked) ->
+                getSharedPreferences("web_search", MODE_PRIVATE).edit().putBoolean("enabled", checked).apply());
+        searchRow.addView(webSearch, new LinearLayout.LayoutParams(dp(56), dp(48)));
+        content.addView(searchRow, spaced());
         divider(content);
         content.addView(heading("Погода"), spaced());
         EditText city = new EditText(this);
@@ -275,6 +287,8 @@ public final class MainActivity extends Activity {
         resultView = label(16);
         resultView.setLineSpacing(dp(4), 1);
         resultView.setTextIsSelectable(true);
+        resultView.setAutoLinkMask(android.text.util.Linkify.WEB_URLS);
+        resultView.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
         resultView.setText("Нет сообщений");
         resultView.setTextColor(MUTED);
         content.addView(resultView, spaced());
@@ -344,6 +358,7 @@ public final class MainActivity extends Activity {
         boolean hasModel = ModelStore.modelFile(this).isFile();
         String state = LlmApiService.modelState();
         String modelStatus = switch (state) {
+            case "searching" -> "Поиск в интернете...";
             case "loading" -> "Загрузка модели...";
             case "generating" -> "Модель отвечает...";
             case "unloading" -> "Выгрузка модели...";
@@ -401,6 +416,7 @@ public final class MainActivity extends Activity {
         userView.setVisibility(View.VISIBLE);
         resultView.setTextColor(INK);
         resultView.setText(weather ? "Получение погоды..."
+                : SearchCommand.query(prompt) != null ? "Поиск в интернете..."
                 : "sleeping".equals(LlmApiService.modelState()) ? "Загрузка модели..." : "Генерация...");
         promptInput.setText("");
         contentScroll.post(() -> contentScroll.fullScroll(View.FOCUS_DOWN));

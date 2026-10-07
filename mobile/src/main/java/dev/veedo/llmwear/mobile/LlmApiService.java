@@ -27,7 +27,7 @@ public final class LlmApiService extends Service {
     private static volatile boolean running;
     private static volatile String status = "Stopped";
     private static volatile String lastError = "";
-    private static volatile LazyLlmEngine currentEngine;
+    private static volatile LlmEngine currentEngine;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private volatile SimpleHttpServer server;
     private volatile boolean destroyed;
@@ -46,12 +46,12 @@ public final class LlmApiService extends Service {
     }
 
     public static String lastError() {
-        LazyLlmEngine current = currentEngine;
+        LlmEngine current = currentEngine;
         return current != null && !current.lastError().isEmpty() ? current.lastError() : lastError;
     }
 
     public static String modelState() {
-        LazyLlmEngine current = currentEngine;
+        LlmEngine current = currentEngine;
         return current == null ? "sleeping" : current.modelState();
     }
 
@@ -84,12 +84,14 @@ public final class LlmApiService extends Service {
                     throw new IllegalStateException("Wait for model import to finish");
                 }
                 boolean gpu = ModelStore.useGpu(this);
-                engine = new LazyLlmEngine(ModelStore.modelName(this),
+                LlmEngine lazy = new LazyLlmEngine(ModelStore.modelName(this),
                         () -> new LiteRtLlmEngine(getApplicationContext(), gpu), MODEL_IDLE_MILLIS,
                         task -> new Thread(() -> {
                             Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
                             task.run();
                         }, "llm-model"));
+                engine = new SearchLlmEngine(lazy, McpWebSearchClient::searchExa,
+                        () -> getSharedPreferences("web_search", MODE_PRIVATE).getBoolean("enabled", true));
                 if (destroyed) {
                     engine.close();
                     return;
@@ -98,7 +100,7 @@ public final class LlmApiService extends Service {
                         tomorrow -> WeatherClient.forecast(getApplicationContext(), tomorrow));
                 candidate.start(300_000, true);
                 server = candidate;
-                currentEngine = (LazyLlmEngine) engine;
+                currentEngine = engine;
                 handler.post(() -> {
                     if (!destroyed) {
                         running = true;
