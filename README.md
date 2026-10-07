@@ -34,9 +34,14 @@
 
 ## Скриншоты
 
-Реальные снимки Galaxy Watch4 Classic с предыдущей установленной версией
-приложения. Здесь показаны главный экран и выбор длительности таймера;
-новые настройки голосового ввода и поиска MCP на этих снимках не представлены.
+Реальный экран Galaxy Z Fold6 с релизом `build-2`: импортированная Gemma,
+GPU, работающий API со спящей моделью и переключатель поиска в интернете.
+
+<p><img src="docs/screenshots/phone-host.png" width="300" alt="LLM Wear Host на Galaxy Z Fold6: Gemma 4 E2B, GPU, API-сервер и поиск MCP"></p>
+
+Снимки Galaxy Watch4 Classic ниже относятся к предыдущей установленной версии:
+главный экран и выбор длительности таймера. Новые настройки голосового ввода
+и результаты поиска MCP на снимках часов не представлены.
 
 <table>
   <tr>
@@ -64,9 +69,10 @@
 
 Телефон: Android 8+ и `arm64-v8a`. Часы: Wear OS с Google Play services.
 Проект проверялся на Galaxy Z Fold6 и Galaxy Watch4 Classic; совместимость
-модели и скорость ответа зависят от устройства. Последнее обновление MCP
-прошло JVM-тесты и живой сетевой запрос на компьютере, но ещё не проверено
-на этих физических устройствах.
+модели и скорость ответа зависят от устройства. Релиз `build-2` установлен
+на Fold6: API отвечает, импортированная модель и GPU сохранены. Живой MCP-запрос
+с компьютера проходит, но из текущей сети телефона Exa блокируется Cloudflare
+с HTTP 403; полный ответ поиска на телефоне пока не подтверждён.
 
 **Безопасность:** HTTP API не использует авторизацию или TLS. Включайте его
 только в доверенной локальной сети и не открывайте порт `8765` в интернет.
@@ -285,6 +291,11 @@ used. Native model, sampler, token capacity, and Bluetooth transport are unchang
 rate-limited hosted endpoint. It receives only the explicit search query plus
 generic retrieval options, not chat history, model weights, or other local data.
 Search therefore needs internet on the phone even when the watch uses Bluetooth.
+If search returns HTTP 403, the provider may be blocking the phone's network:
+on the tested Fold6, both the app and a separate on-device curl request received
+Cloudflare's block page, while the same initialization succeeded on the development
+computer. The app does not bypass this block, change VPN settings, or silently
+switch providers. Check provider access from another network or contact the provider.
 The supported protocol revisions are `2025-11-25`, `2025-06-18`, and `2025-03-26`;
 JSON/SSE responses are parsed with JSON APIs and OkHttp SSE. Decompressed replies
 are limited to 128 KB, the search deadline is 30 seconds, and best-effort session
@@ -350,6 +361,14 @@ notification. It does not automatically restart after Android kills the process.
 The API is unauthenticated and uses plain HTTP; use it on a trusted local network.
 
 ## Verification
+
+On 2026-10-07, the published `build-2` phone APK was installed in place on
+SM-F956B. The 2,588,147,712-byte imported model, selected GPU backend, and weather
+city were preserved. The app opened and `/health` returned `ready` with
+`model_state=sleeping`. An explicit search returned HTTP 403 before model loading;
+an independent on-device curl confirmed a Cloudflare block from that network.
+End-to-end MCP summarization on the phone and this release's watch installation
+remain unverified. The phone screenshot above was captured from this installation.
 
 JVM tests exercise real HTTP requests against the server using a fake engine:
 UTF-8 prompts, validation, chat history, model listing, errors, and concurrent
